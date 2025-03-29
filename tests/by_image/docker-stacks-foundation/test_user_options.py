@@ -40,7 +40,7 @@ def test_nb_user_change(container: TrackedContainer) -> None:
     container.run_detached(
         user="root",
         environment=[f"NB_USER={nb_user}", "CHOWN_HOME=yes"],
-        command=["bash", "-c", "sleep infinity"],
+        command=["sleep", "infinity"],
     )
 
     # Give the chown time to complete.
@@ -92,9 +92,11 @@ def test_chown_extra(container: TrackedContainer) -> None:
             "CHOWN_EXTRA_OPTS=-R",
         ],
         command=[
-            "bash",
+            "stat",
             "-c",
-            "stat -c '%n:%u:%g' /home/jovyan/.bashrc /opt/conda/bin/jupyter",
+            "%n:%u:%g",
+            "/home/jovyan/.bashrc",
+            "/opt/conda/bin/jupyter",
         ],
     )
     assert "/home/jovyan/.bashrc:1010:101" in logs
@@ -114,7 +116,7 @@ def test_chown_home(container: TrackedContainer) -> None:
             "NB_UID=1010",
             "NB_GID=101",
         ],
-        command=["bash", "-c", "stat -c '%n:%u:%g' /home/kitten/.bashrc"],
+        command=["stat", "-c", "%n:%u:%g", "/home/kitten/.bashrc"],
     )
     assert "/home/kitten/.bashrc:1010:101" in logs
 
@@ -175,11 +177,10 @@ def test_set_uid(container: TrackedContainer) -> None:
     Additionally, verify that "--group-add=users" is suggested in a warning to restore
     write access.
     """
+    # This test needs to have tty disabled, the reason is explained here:
+    # https://github.com/jupyter/docker-stacks/pull/2260#discussion_r2008821257
     logs = container.run_and_wait(
-        timeout=5,
-        no_warnings=False,
-        user="1010",
-        command=["id"],
+        timeout=5, no_warnings=False, user="1010", command=["id"], tty=False
     )
     assert "uid=1010(jovyan) gid=0(root)" in logs
     warnings = TrackedContainer.get_warnings(logs)
@@ -209,23 +210,23 @@ def test_container_not_delete_bind_mount(
     """Container should not delete host system files when using the (docker)
     -v bind mount flag and mapping to /home/jovyan.
     """
-    d = tmp_path / "data"
-    d.mkdir()
-    p = d / "foo.txt"
-    p.write_text("some-content")
+    host_data_dir = tmp_path / "data"
+    host_data_dir.mkdir()
+    host_file = host_data_dir / "foo.txt"
+    host_file.write_text("some-content")
 
     container.run_and_wait(
-        timeout=5,
+        timeout=10,
         user="root",
         working_dir="/home/",
         environment=[
             "NB_USER=user",
             "CHOWN_HOME=yes",
         ],
-        volumes={d: {"bind": "/home/jovyan/data", "mode": "rw"}},
+        volumes={host_data_dir: {"bind": "/home/jovyan/data", "mode": "rw"}},
         command=["ls"],
     )
-    assert p.read_text() == "some-content"
+    assert host_file.read_text() == "some-content"
     assert len(list(tmp_path.iterdir())) == 1
 
 
@@ -258,16 +259,16 @@ def test_secure_path(container: TrackedContainer, tmp_path: pathlib.Path) -> Non
     """Make sure that the sudo command has conda's python (not system's) on PATH.
     See <https://github.com/jupyter/docker-stacks/issues/1053>.
     """
-    d = tmp_path / "data"
-    d.mkdir()
-    p = d / "wrong_python.sh"
-    p.write_text('#!/bin/bash\necho "Wrong python executable invoked!"')
-    p.chmod(0o755)
+    host_data_dir = tmp_path / "data"
+    host_data_dir.mkdir()
+    host_file = host_data_dir / "wrong_python.sh"
+    host_file.write_text('#!/bin/bash\necho "Wrong python executable invoked!"')
+    host_file.chmod(0o755)
 
     logs = container.run_and_wait(
         timeout=5,
         user="root",
-        volumes={p: {"bind": "/usr/bin/python", "mode": "ro"}},
+        volumes={host_file: {"bind": "/usr/bin/python", "mode": "ro"}},
         command=["python", "--version"],
     )
     assert "Wrong python" not in logs

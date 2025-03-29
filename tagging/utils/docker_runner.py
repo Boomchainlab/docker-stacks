@@ -22,11 +22,10 @@ class DockerRunner:
         self.docker_client: docker.DockerClient = docker_client
 
     def __enter__(self) -> Container:
-        LOGGER.info(f"Creating container for image {self.image_name} ...")
+        LOGGER.info(f"Creating a container for the image: {self.image_name} ...")
+        default_kwargs = {"detach": True, "tty": True}
         self.container = self.docker_client.containers.run(
-            image=self.image_name,
-            command=self.command,
-            detach=True,
+            image=self.image_name, command=self.command, **default_kwargs
         )
         LOGGER.info(f"Container {self.container.name} created")
         return self.container
@@ -48,6 +47,9 @@ class DockerRunner:
         exec_result = container.exec_run(cmd)
         output = exec_result.output.decode().rstrip()
         assert isinstance(output, str)
-        LOGGER.info(f"Command output: {output}")
-        assert exec_result.exit_code == 0, f"Command: `{cmd}` failed"
+        if exec_result.exit_code != 0:
+            LOGGER.error(f"Command output:\n{output}")
+            raise AssertionError(f"Command: `{cmd}` failed")
+        else:
+            LOGGER.debug(f"Command output:\n{output}")
         return output

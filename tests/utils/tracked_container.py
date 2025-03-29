@@ -44,10 +44,15 @@ class TrackedContainer:
             Keyword arguments to pass to docker.DockerClient.containers.run
             extending and/or overriding key/value pairs passed to the constructor
         """
-        LOGGER.info(f"Running {self.image_name} with args {kwargs} ...")
-        self.container = self.docker_client.containers.run(
-            self.image_name, **kwargs, detach=True
+        LOGGER.info(
+            f"Creating a container for the image: {self.image_name} with args: {kwargs} ..."
         )
+        default_kwargs = {"detach": True, "tty": True}
+        final_kwargs = default_kwargs | kwargs
+        self.container = self.docker_client.containers.run(
+            self.image_name, **final_kwargs
+        )
+        LOGGER.info(f"Container {self.container.name} created")
 
     def get_logs(self) -> str:
         assert self.container is not None
@@ -63,12 +68,18 @@ class TrackedContainer:
     def exec_cmd(self, cmd: str, **kwargs: Any) -> str:
         assert self.container is not None
         container = self.container
+
         LOGGER.info(f"Running cmd: `{cmd}` on container: {container.name}")
-        exec_result = container.exec_run(cmd, **kwargs)
+        default_kwargs = {"tty": True}
+        final_kwargs = default_kwargs | kwargs
+        exec_result = container.exec_run(cmd, **final_kwargs)
         output = exec_result.output.decode().rstrip()
         assert isinstance(output, str)
-        LOGGER.info(f"Command output: {output}")
-        assert exec_result.exit_code == 0, f"Command: `{cmd}` failed"
+        if exec_result.exit_code != 0:
+            LOGGER.error(f"Command output:\n{output}")
+            raise AssertionError(f"Command: `{cmd}` failed")
+        else:
+            LOGGER.debug(f"Command output:\n{output}")
         return output
 
     def run_and_wait(
@@ -83,10 +94,24 @@ class TrackedContainer:
         assert self.container is not None
         rv = self.container.wait(timeout=timeout)
         logs = self.get_logs()
-        LOGGER.debug(logs)
+        rc_success = rv["StatusCode"] == 0
+        should_report = not (
+            no_failure == rc_success
+            and no_warnings == (not self.get_warnings(logs))
+            and no_errors == (not self.get_errors(logs))
+        )
+
+        if not rc_success or should_report:
+            LOGGER.error(f"Command output:\n{logs}")
+        else:
+            LOGGER.debug(f"Command output:\n{logs}")
+        self.remove()
+
+        # To see the reason, we run assert statements separately
+        assert no_failure == rc_success
         assert no_warnings == (not self.get_warnings(logs))
         assert no_errors == (not self.get_errors(logs))
-        assert no_failure == (rv["StatusCode"] == 0)
+
         return logs
 
     @staticmethod
@@ -104,8 +129,9 @@ class TrackedContainer:
     def remove(self) -> None:
         """Kills and removes the tracked docker container."""
         if self.container is None:
-            LOGGER.info("No container to remove")
+            LOGGER.debug("No container to remove")
         else:
             LOGGER.info(f"Removing container {self.container.name} ...")
             self.container.remove(force=True)
             LOGGER.info(f"Container {self.container.name} removed")
+            self.container = None
