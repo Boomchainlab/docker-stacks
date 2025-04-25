@@ -40,17 +40,17 @@ jobs:
           path: wiki_src/
 
       - name: Update wiki 🏷
-        run: >
-          python3 -m wiki.update_wiki
-          --wiki-dir wiki_src/
-          --hist-lines-dir /tmp/jupyter/hist_lines/
-          --manifests-dir /tmp/jupyter/manifests/
-          --repository ${{ github.repository }}
+        run: |
+          python3 -m wiki.update_wiki \
+            --wiki-dir wiki_src/ \
+            --hist-lines-dir /tmp/jupyter/hist_lines/ \
+            --manifests-dir /tmp/jupyter/manifests/ \
+            --repository ${{ github.repository }}
         shell: bash
 
       - name: Push Wiki to GitHub 📤
         if: env.PUSH_TO_REGISTRY == 'true'
-        uses: stefanzweifel/git-auto-commit-action@e348103e9026cc0eee72ae06630dbe30c8bf7a79 # v5.1.0
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5.2.0
         with:
           commit_message: "Automated wiki publish for ${{ github.sha }}"
           repository: wiki_src/

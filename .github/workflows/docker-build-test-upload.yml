@@ -44,6 +44,19 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
 
     steps:
+      # Image with CUDA needs extra disk space
+      - name: Free disk space 🧹
+        if: contains(inputs.variant, 'cuda')
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
       - name: Checkout Repo ⚡️
         uses: actions/checkout@v4
       - name: Create dev environment 📦
@@ -63,13 +76,13 @@ jobs:
         shell: bash
 
       - name: Build image 🛠
-        run: >
-          docker build
-          --rm --force-rm
-          --tag ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ inputs.image }}
-          images/${{ inputs.image }}/${{ inputs.variant != 'default' && inputs.variant || '.' }}/
-          --build-arg REGISTRY=${{ env.REGISTRY }}
-          --build-arg OWNER=${{ env.OWNER }}
+        run: |
+          docker build \
+            --rm --force-rm \
+            --tag ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ inputs.image }} \
+            images/${{ inputs.image }}/${{ inputs.variant != 'default' && inputs.variant || '.' }}/ \
+            --build-arg REGISTRY=${{ env.REGISTRY }} \
+            --build-arg OWNER=${{ env.OWNER }}
         env:
           DOCKER_BUILDKIT: 1
           # Full logs for CI build
@@ -77,13 +90,13 @@ jobs:
         shell: bash
 
       - name: Write tags file 🏷
-        run: >
-          python3 -m tagging.apps.write_tags_file
-          --registry ${{ env.REGISTRY }}
-          --owner ${{ env.OWNER }}
-          --image ${{ inputs.image }}
-          --variant ${{ inputs.variant }}
-          --tags-dir /tmp/jupyter/tags/
+        run: |
+          python3 -m tagging.apps.write_tags_file \
+            --registry ${{ env.REGISTRY }} \
+            --owner ${{ env.OWNER }} \
+            --image ${{ inputs.image }} \
+            --variant ${{ inputs.variant }} \
+            --tags-dir /tmp/jupyter/tags/
         shell: bash
       - name: Upload tags file 💾
         uses: actions/upload-artifact@v4
@@ -93,15 +106,15 @@ jobs:
           retention-days: 3
 
       - name: Write manifest and build history file 🏷
-        run: >
-          python3 -m tagging.apps.write_manifest
-          --registry ${{ env.REGISTRY }}
-          --owner ${{ env.OWNER }}
-          --image ${{ inputs.image }}
-          --variant ${{ inputs.variant }}
-          --hist-lines-dir /tmp/jupyter/hist_lines/
-          --manifests-dir /tmp/jupyter/manifests/
-          --repository ${{ github.repository }}
+        run: |
+          python3 -m tagging.apps.write_manifest \
+            --registry ${{ env.REGISTRY }} \
+            --owner ${{ env.OWNER }} \
+            --image ${{ inputs.image }} \
+            --variant ${{ inputs.variant }} \
+            --hist-lines-dir /tmp/jupyter/hist_lines/ \
+            --manifests-dir /tmp/jupyter/manifests/ \
+            --repository ${{ github.repository }}
         shell: bash
       - name: Upload manifest file 💾
         uses: actions/upload-artifact@v4
@@ -119,7 +132,9 @@ jobs:
       - name: Save image as a tar for later use 💾
         run: |
           mkdir -p /tmp/jupyter/images/
-          docker save ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ inputs.image }} | zstd > /tmp/jupyter/images/${{ inputs.image }}-${{ inputs.platform }}-${{ inputs.variant }}.tar.zst
+          docker save \
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ inputs.image }} \
+            | zstd > /tmp/jupyter/images/${{ inputs.image }}-${{ inputs.platform }}-${{ inputs.variant }}.tar.zst
         shell: bash
       - name: Upload image as artifact 💾
         uses: actions/upload-artifact@v4
@@ -130,9 +145,9 @@ jobs:
           compression-level: 0
 
       - name: Run tests ✅
-        run: >
-          python3 -m tests.run_tests
-          --registry ${{ env.REGISTRY }}
-          --owner ${{ env.OWNER }}
-          --image ${{ inputs.image }}
+        run: |
+          python3 -m tests.run_tests \
+            --registry ${{ env.REGISTRY }} \
+            --owner ${{ env.OWNER }} \
+            --image ${{ inputs.image }}
         shell: bash
